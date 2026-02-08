@@ -2,11 +2,12 @@
 Simpler version using public iCal feed - no authentication required!
 Just make your Google Calendar public and use its iCal URL.
 """
-from flask import Flask, render_template, request
+from flask import Flask, render_template, request, jsonify
 import requests
 from icalendar import Calendar
 from datetime import datetime, timedelta, date, timezone
 import os
+import hashlib
 from dotenv import load_dotenv
 try:
     from zoneinfo import ZoneInfo
@@ -43,6 +44,18 @@ ALL_TIMEZONES = {
     'IST': 'Asia/Kolkata',
     'AEST': 'Australia/Sydney'
 }
+
+def get_calendar_hash(url):
+    """Get a hash of the calendar data to detect changes."""
+    if not url:
+        return None
+    try:
+        response = requests.get(url, timeout=10)
+        response.raise_for_status()
+        # Create hash of the calendar content
+        return hashlib.md5(response.text.encode()).hexdigest()
+    except:
+        return None
 
 def get_available_time_slots_by_week(url, tz_name='PST'):
     """Get available time slots grouped by week for weekdays in remaining February dates."""
@@ -216,7 +229,7 @@ def get_available_time_slots_by_week(url, tz_name='PST'):
                     'days': {i: [] for i in range(5)}  # Monday to Friday
                 }
             
-            # Format slot with times in all 4 US timezones (PST, MST, CST, EST)
+            # Format slot with time in the selected timezone only
             duration = slot['end'] - slot['start']
             hours = int(duration.total_seconds() // 3600)
             minutes = int((duration.total_seconds() % 3600) // 60)
@@ -228,26 +241,15 @@ def get_available_time_slots_by_week(url, tz_name='PST'):
             else:
                 duration_str = f"{minutes}m"
             
-            # Convert to all 4 US timezones
-            main_tzs = ['PST', 'MST', 'CST', 'EST']
-            times_in_tz = {}
-            for tz_code in main_tzs:
-                tz_str = ALL_TIMEZONES.get(tz_code, 'America/Los_Angeles')
-                try:
-                    tz_obj = ZoneInfo(tz_str)
-                    start_tz = slot['start'].astimezone(tz_obj)
-                    end_tz = slot['end'].astimezone(tz_obj)
-                    start_str = start_tz.strftime('%I:%M %p').lstrip('0')
-                    end_str = end_tz.strftime('%I:%M %p').lstrip('0')
-                    times_in_tz[tz_code] = f"{start_str} - {end_str}"
-                except:
-                    times_in_tz[tz_code] = ""
+            # Convert to display timezone (already in display_tz, just format)
+            start_str = slot['start'].strftime('%I:%M %p').lstrip('0')
+            end_str = slot['end'].strftime('%I:%M %p').lstrip('0')
+            time_str = f"{start_str} - {end_str}"
             
             formatted_slot = {
                 'date': date_obj,
                 'date_str': date_obj.strftime('%B %d'),
-                'time': times_in_tz.get('PST', ''),  # Primary display time
-                'times_all': times_in_tz,  # All timezone times
+                'time': time_str,  # Time in selected timezone only
                 'duration': duration_str,
                 'start_dt': slot['start_dt']
             }
@@ -271,12 +273,25 @@ def get_available_time_slots_by_week(url, tz_name='PST'):
         traceback.print_exc()
         return {}
 
+@app.route('/check-updates')
+def check_updates():
+    """Check if calendar has been updated."""
+    current_hash = get_calendar_hash(ICAL_URL)
+    stored_hash = request.args.get('hash', '')
+    
+    if current_hash and current_hash != stored_hash:
+        return jsonify({'changed': True, 'hash': current_hash})
+    return jsonify({'changed': False, 'hash': current_hash or stored_hash})
+
 @app.route('/')
 def index():
     """Display the public calendar page with available time slots grouped by week."""
     # Get timezone from request (default to PST)
     tz_name = request.args.get('tz', 'PST')
     selected_week = request.args.get('week', None)
+    
+    # Get current calendar hash
+    current_hash = get_calendar_hash(ICAL_URL)
     
     # Always fetch fresh data (no caching)
     weeks_data = get_available_time_slots_by_week(ICAL_URL, tz_name)
@@ -314,7 +329,7 @@ def index():
         day_dates=day_dates,
         current_tz=tz_name,
         timezones=TIMEZONES,
-        main_timezones=['PST', 'MST', 'CST', 'EST']
+        calendar_hash=current_hash or ''
     ))
     # Prevent caching to ensure fresh data
     response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
