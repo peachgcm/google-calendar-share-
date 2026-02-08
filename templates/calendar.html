@@ -104,6 +104,17 @@
             margin: 10px 0;
         }
         
+        .wake-up-notice {
+            background: #fff3cd;
+            border: 1px solid #ffc107;
+            border-radius: 8px;
+            padding: 12px 20px;
+            margin-top: 20px;
+            font-size: 0.9em;
+            color: #856404;
+            display: inline-block;
+        }
+        
         .intro-steps {
             display: flex;
             justify-content: center;
@@ -258,6 +269,9 @@
         <div class="intro-section">
                 <h2>Peng Jiang's Available Time in February</h2>
             <p>View available time slots for scheduling meetings and appointments.</p>
+            <div class="wake-up-notice">
+                It may take 30-60 secs to load the information.
+            </div>
             <div class="intro-steps">
                 <div class="intro-step">
                     <div class="step-number">1</div>
@@ -356,28 +370,12 @@
             window.location.href = `/?tz=${tz}&week=${week}`;
         }
         
-        // Store current calendar hash
-        let currentHash = '{{ calendar_hash }}';
-        
-        // Check for calendar updates every 30 seconds
+        // Auto-refresh every 2 minutes
         setInterval(function() {
-            fetch(`/check-updates?hash=${currentHash}`)
-                .then(response => response.json())
-                .then(data => {
-                    if (data.changed) {
-                        // Calendar has changed, refresh the page
-                        const tz = document.getElementById('timezone').value;
-                        const week = document.getElementById('week').value;
-                        window.location.href = `/?tz=${tz}&week=${week}`;
-                    } else if (data.hash) {
-                        // Update stored hash (in case it was null before)
-                        currentHash = data.hash;
-                    }
-                })
-                .catch(error => {
-                    console.log('Error checking for updates:', error);
-                });
-        }, 30000); // Check every 30 seconds
+            const tz = document.getElementById('timezone').value;
+            const week = document.getElementById('week').value;
+            window.location.href = `/?tz=${tz}&week=${week}`;
+        }, 120000);
     </script>
 </body>
 </html>
