@@ -1,0 +1,10 @@
+services:
+  - type: web
+    name: google-calendar-share
+    env: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: python app_simple.py
+    envVars:
+      - key: ICAL_URL
+        sync: false
+    healthCheckPath: /

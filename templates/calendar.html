@@ -1,0 +1,347 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Available Time Slots</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            overflow: hidden;
+        }
+        
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px 40px;
+        }
+        
+        .header h1 {
+            font-size: 2.2em;
+            margin-bottom: 15px;
+        }
+        
+        .controls {
+            display: flex;
+            gap: 20px;
+            flex-wrap: wrap;
+            align-items: center;
+            margin-top: 20px;
+        }
+        
+        .control-group {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .control-group label {
+            font-size: 0.95em;
+            opacity: 0.9;
+        }
+        
+        select {
+            padding: 10px 15px;
+            border: 2px solid rgba(255,255,255,0.3);
+            border-radius: 8px;
+            background: rgba(255,255,255,0.2);
+            color: white;
+            font-size: 14px;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        
+        select:hover {
+            background: rgba(255,255,255,0.3);
+            border-color: rgba(255,255,255,0.5);
+        }
+        
+        select option {
+            background: #667eea;
+            color: white;
+        }
+        
+        .refresh-btn {
+            padding: 10px 20px;
+            background: rgba(255,255,255,0.2);
+            border: 2px solid white;
+            border-radius: 25px;
+            color: white;
+            font-size: 14px;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        
+        .refresh-btn:hover {
+            background: rgba(255,255,255,0.3);
+        }
+        
+        .last-update {
+            margin-top: 15px;
+            font-size: 0.9em;
+            opacity: 0.8;
+        }
+        
+        .content {
+            padding: 40px;
+        }
+        
+        .week-view {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+        }
+        
+        .day-column {
+            background: #f8f9fa;
+            border-radius: 12px;
+            padding: 20px;
+            border-left: 4px solid #667eea;
+        }
+        
+        .day-header {
+            font-size: 1.3em;
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 15px;
+            padding-bottom: 10px;
+            border-bottom: 2px solid #e0e0e0;
+        }
+        
+        .day-date {
+            font-size: 0.9em;
+            color: #666;
+            margin-top: 5px;
+        }
+        
+        .time-slot {
+            background: white;
+            padding: 12px;
+            margin-bottom: 10px;
+            border-radius: 8px;
+            border-left: 3px solid #4CAF50;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+        
+        .time-slot:hover {
+            transform: translateX(3px);
+            box-shadow: 0 3px 10px rgba(0,0,0,0.1);
+        }
+        
+        .time-slot .time {
+            font-weight: 600;
+            color: #667eea;
+            font-size: 1em;
+            margin-bottom: 8px;
+        }
+        
+        .time-slot .time-all {
+            font-size: 0.85em;
+            color: #666;
+            margin-top: 5px;
+            line-height: 1.6;
+        }
+        
+        .time-slot .time-all .tz-label {
+            font-weight: 600;
+            color: #555;
+            display: inline-block;
+            min-width: 35px;
+        }
+        
+        .time-slot .duration {
+            font-size: 0.85em;
+            color: #888;
+            margin-top: 8px;
+            padding-top: 8px;
+            border-top: 1px solid #e0e0e0;
+        }
+        
+        .no-slots {
+            text-align: center;
+            padding: 20px;
+            color: #888;
+            font-style: italic;
+        }
+        
+        .no-week-data {
+            text-align: center;
+            padding: 60px 20px;
+            color: #888;
+            font-size: 1.2em;
+        }
+        
+        @media (max-width: 768px) {
+            .header {
+                padding: 20px;
+            }
+            
+            .header h1 {
+                font-size: 1.8em;
+            }
+            
+            .controls {
+                flex-direction: column;
+                align-items: stretch;
+            }
+            
+            .control-group {
+                flex-direction: column;
+                align-items: stretch;
+            }
+            
+            select {
+                width: 100%;
+            }
+            
+            .week-view {
+                grid-template-columns: 1fr;
+            }
+            
+            .content {
+                padding: 20px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>📅 Available Time Slots</h1>
+            <p>Weekdays in February (9 AM - 5 PM)</p>
+            
+            <div class="controls">
+                <div class="control-group">
+                    <label for="timezone">Timezone:</label>
+                    <select id="timezone" onchange="updateTimezone()">
+                        {% for tz_code, tz_name in timezones.items() %}
+                        <option value="{{ tz_code }}" {% if tz_code == current_tz %}selected{% endif %}>
+                            {{ tz_code }}
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+                
+                <div class="control-group">
+                    <label for="week">Week:</label>
+                    <select id="week" onchange="updateWeek()">
+                        {% for week in week_list %}
+                        <option value="{{ week.key }}" {% if week.key == selected_week %}selected{% endif %}>
+                            {{ week.label }}
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+                
+                <button class="refresh-btn" onclick="refreshPage()">🔄 Refresh</button>
+            </div>
+            
+            <div class="last-update" id="lastUpdate"></div>
+        </div>
+        
+        <div class="content">
+            {% if selected_week_data and selected_week_data.days %}
+                <div class="week-view">
+                    {% set day_names = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'] %}
+                    {% for day_idx in range(5) %}
+                        {% set day_name = day_names[day_idx] %}
+                        {% set day_slots = selected_week_data.days[day_idx] %}
+                        {% set day_date = day_dates[day_idx] if day_dates else None %}
+                        
+                        <div class="day-column">
+                            <div class="day-header">
+                                {{ day_name }}
+                                {% if day_date %}
+                                <div class="day-date">{{ day_date.strftime('%b %d') }}</div>
+                                {% endif %}
+                            </div>
+                            
+                            {% if day_slots %}
+                                {% for slot in day_slots %}
+                                    <div class="time-slot">
+                                        <div class="time">🕐 {{ slot.time }}</div>
+                                        {% if slot.times_all %}
+                                        <div class="time-all">
+                                            {% for tz_code in main_timezones %}
+                                                {% if slot.times_all[tz_code] %}
+                                                <div><span class="tz-label">{{ tz_code }}:</span> {{ slot.times_all[tz_code] }}</div>
+                                                {% endif %}
+                                            {% endfor %}
+                                        </div>
+                                        {% endif %}
+                                        <div class="duration">{{ slot.duration }}</div>
+                                    </div>
+                                {% endfor %}
+                            {% else %}
+                                <div class="no-slots">No available slots</div>
+                            {% endif %}
+                        </div>
+                    {% endfor %}
+                </div>
+            {% else %}
+                <div class="no-week-data">
+                    <p>No available time slots found for the selected week.</p>
+                </div>
+            {% endif %}
+        </div>
+    </div>
+    
+    <script>
+        // Update last refresh time
+        function updateLastRefreshTime() {
+            const now = new Date();
+            const timeStr = now.toLocaleTimeString();
+            document.getElementById('lastUpdate').textContent = `Last updated: ${timeStr}`;
+        }
+        
+        // Update timezone
+        function updateTimezone() {
+            const tz = document.getElementById('timezone').value;
+            const week = document.getElementById('week').value;
+            window.location.href = `/?tz=${tz}&week=${week}`;
+        }
+        
+        // Update week
+        function updateWeek() {
+            const tz = document.getElementById('timezone').value;
+            const week = document.getElementById('week').value;
+            window.location.href = `/?tz=${tz}&week=${week}`;
+        }
+        
+        // Refresh the page
+        function refreshPage() {
+            const tz = document.getElementById('timezone').value;
+            const week = document.getElementById('week').value;
+            window.location.href = `/?tz=${tz}&week=${week}`;
+        }
+        
+        // Auto-refresh every 2 minutes
+        setInterval(function() {
+            const tz = document.getElementById('timezone').value;
+            const week = document.getElementById('week').value;
+            window.location.href = `/?tz=${tz}&week=${week}`;
+        }, 120000);
+        
+        // Update time on page load
+        updateLastRefreshTime();
+        setInterval(updateLastRefreshTime, 60000);
+    </script>
+</body>
+</html>

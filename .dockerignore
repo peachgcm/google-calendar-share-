@@ -1,0 +1,17 @@
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+.env
+.venv
+*.log
+.git
+.gitignore
+README.md
+*.md
+.DS_Store
+token.pickle
+client_secret.json
