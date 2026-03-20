@@ -75,6 +75,8 @@ Use `app_simple.py` which reads from your calendar's public iCal feed. No authen
 2. Set the URL in `.env`:
    ```env
    ICAL_URL=https://calendar.google.com/calendar/ical/your-calendar-id/public/basic.ics
+   # Optional: weekdays 9–5 are shown from today through this many days ahead (default 90)
+   CALENDAR_HORIZON_DAYS=90
    ```
 
 3. Run the simple version:

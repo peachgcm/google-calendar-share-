@@ -21,6 +21,8 @@ app = Flask(__name__)
 # Get the public iCal URL from environment variable
 # You can find this in Google Calendar settings > Integrate calendar > Public URL to iCal
 ICAL_URL = os.environ.get('ICAL_URL', '')
+# How many days ahead to show available slots (weekdays only, 9–5 in chosen TZ)
+CALENDAR_HORIZON_DAYS = int(os.environ.get('CALENDAR_HORIZON_DAYS', '90'))
 
 # Main timezones (all 4 US time zones)
 TIMEZONES = {
@@ -44,8 +46,22 @@ ALL_TIMEZONES = {
     'AEST': 'Australia/Sydney'
 }
 
+def _merge_intervals(intervals):
+    """Merge overlapping [start, end) datetime intervals."""
+    if not intervals:
+        return []
+    intervals = sorted(intervals, key=lambda x: x[0])
+    merged = [list(intervals[0])]
+    for s, e in intervals[1:]:
+        if s <= merged[-1][1]:
+            merged[-1][1] = max(merged[-1][1], e)
+        else:
+            merged.append([s, e])
+    return [(a[0], a[1]) for a in merged]
+
+
 def get_available_time_slots_by_week(url, tz_name='PST'):
-    """Get available time slots grouped by week for weekdays in remaining February dates."""
+    """Get available time slots grouped by week for weekdays from today through horizon."""
     if not url:
         return {}
     
@@ -53,7 +69,7 @@ def get_available_time_slots_by_week(url, tz_name='PST'):
     tz_str = TIMEZONES.get(tz_name, TIMEZONES['PST'])
     try:
         display_tz = ZoneInfo(tz_str)
-    except:
+    except Exception:
         display_tz = ZoneInfo('America/Los_Angeles')  # Default to PST
     
     try:
@@ -64,24 +80,20 @@ def get_available_time_slots_by_week(url, tz_name='PST'):
         now_utc = datetime.now(timezone.utc)
         now_tz = now_utc.astimezone(display_tz)
         
-        current_year = now_tz.year
-        current_month = now_tz.month
-        current_day = now_tz.day
+        today_date = now_tz.date()
+        end_date = today_date + timedelta(days=CALENDAR_HORIZON_DAYS)
         
-        # Define February end date
-        if current_month == 2:
-            feb_start = current_day
-        else:
-            feb_start = 1
-        
-        feb_end = 28 if current_year % 4 != 0 or (current_year % 100 == 0 and current_year % 400 != 0) else 29
+        # Range bounds for filtering events that could affect availability
+        range_start_dt = datetime.combine(today_date, datetime.min.time()).replace(tzinfo=display_tz)
+        # Exclusive upper bound: start of day after last included date
+        range_end_exclusive = datetime.combine(end_date + timedelta(days=1), datetime.min.time()).replace(tzinfo=display_tz)
         
         # Working hours: 9 AM to 5 PM in display timezone
         work_start_hour = 9
         work_end_hour = 17
         
-        # Collect all busy events for February weekdays
-        busy_slots = []
+        # All timed busy intervals that overlap the planning window
+        all_busy = []
         
         for component in cal.walk('vevent'):
             dtstart = component.get('dtstart')
@@ -92,111 +104,92 @@ def get_available_time_slots_by_week(url, tz_name='PST'):
             if not isinstance(start_dt, datetime):
                 continue
             
-            # Make timezone-aware
             if start_dt.tzinfo is None:
                 start_dt = start_dt.replace(tzinfo=timezone.utc)
-            
-            # Convert to display timezone
             start_tz = start_dt.astimezone(display_tz)
             
-            # Only process February dates
-            if start_tz.month != 2 or start_tz.year != current_year:
-                continue
-            
-            # Only process weekdays (Monday=0, Friday=4)
-            if start_tz.weekday() > 4:
-                continue
-            
-            # Only process remaining dates
-            if start_tz.day < feb_start:
-                continue
-            
-            # Get end time
             dtend = component.get('dtend')
-            if dtend:
-                end_dt = dtend.dt
-                if isinstance(end_dt, datetime):
-                    if end_dt.tzinfo is None:
-                        end_dt = end_dt.replace(tzinfo=timezone.utc)
-                    end_tz = end_dt.astimezone(display_tz)
-                    busy_slots.append((start_tz, end_tz))
-        
-        # Group busy slots by date
-        busy_by_date = {}
-        for start, end in busy_slots:
-            date_key = start.date()
-            if date_key not in busy_by_date:
-                busy_by_date[date_key] = []
-            busy_by_date[date_key].append((start, end))
-        
-        # Sort busy slots for each date
-        for date_key in busy_by_date:
-            busy_by_date[date_key].sort(key=lambda x: x[0])
+            if not dtend:
+                continue
+            end_dt = dtend.dt
+            if not isinstance(end_dt, datetime):
+                continue
+            if end_dt.tzinfo is None:
+                end_dt = end_dt.replace(tzinfo=timezone.utc)
+            end_tz = end_dt.astimezone(display_tz)
+            
+            if end_tz <= range_start_dt or start_tz >= range_end_exclusive:
+                continue
+            all_busy.append((start_tz, end_tz))
         
         # Calculate available time slots
         available_slots = []
         min_duration_minutes = 30
         
-        # Iterate through each weekday in remaining February
-        for day in range(feb_start, feb_end + 1):
-            try:
-                date_obj = date(current_year, 2, day)
-                # Check if it's a weekday
-                if date_obj.weekday() > 4:
-                    continue
-                
-                # Create datetime objects for work hours in display timezone
-                work_start_naive = datetime.combine(date_obj, datetime.min.time().replace(hour=work_start_hour))
-                work_end_naive = datetime.combine(date_obj, datetime.min.time().replace(hour=work_end_hour))
-                work_start = work_start_naive.replace(tzinfo=display_tz)
-                work_end = work_end_naive.replace(tzinfo=display_tz)
-                
-                # Skip if date is in the past
-                if work_start < now_tz:
-                    continue
-                
-                # Get busy slots for this date
-                busy_today = busy_by_date.get(date_obj, [])
-                
-                # Calculate available slots
-                current_time = work_start
-                
-                for busy_start, busy_end in busy_today:
-                    if current_time < busy_start:
-                        slot_start = current_time
-                        slot_end = min(busy_start, work_end)
-                        
-                        if slot_end > slot_start:
-                            duration = slot_end - slot_start
-                            duration_minutes = int(duration.total_seconds() // 60)
-                            
-                            if duration_minutes >= min_duration_minutes:
-                                available_slots.append({
-                                    'date': date_obj,
-                                    'start': slot_start,
-                                    'end': slot_end,
-                                    'start_dt': slot_start,
-                                    'weekday': date_obj.weekday()  # 0=Monday, 4=Friday
-                                })
-                    
-                    current_time = max(current_time, busy_end)
-                
-                # Check if there's time available after the last busy slot
-                if current_time < work_end:
-                    duration = work_end - current_time
-                    duration_minutes = int(duration.total_seconds() // 60)
-                    
-                    if duration_minutes >= min_duration_minutes:
-                        available_slots.append({
-                            'date': date_obj,
-                            'start': current_time,
-                            'end': work_end,
-                            'start_dt': current_time,
-                            'weekday': date_obj.weekday()
-                        })
-                
-            except ValueError:
+        d = today_date
+        while d <= end_date:
+            if d.weekday() > 4:
+                d += timedelta(days=1)
                 continue
+            
+            work_start_naive = datetime.combine(d, datetime.min.time().replace(hour=work_start_hour))
+            work_end_naive = datetime.combine(d, datetime.min.time().replace(hour=work_end_hour))
+            work_start = work_start_naive.replace(tzinfo=display_tz)
+            work_end = work_end_naive.replace(tzinfo=display_tz)
+            
+            # For today, availability starts now (not before current time)
+            if d == today_date:
+                current_time = max(work_start, now_tz)
+            else:
+                current_time = work_start
+            
+            if current_time >= work_end:
+                d += timedelta(days=1)
+                continue
+            
+            # Busy segments on this day, clipped to the work window
+            day_busy = []
+            for b_s, b_e in all_busy:
+                seg_start = max(b_s, work_start)
+                seg_end = min(b_e, work_end)
+                if seg_end > seg_start:
+                    day_busy.append((seg_start, seg_end))
+            day_busy = _merge_intervals(day_busy)
+            
+            for busy_start, busy_end in day_busy:
+                if current_time < busy_start:
+                    slot_start = current_time
+                    slot_end = min(busy_start, work_end)
+                    
+                    if slot_end > slot_start:
+                        duration = slot_end - slot_start
+                        duration_minutes = int(duration.total_seconds() // 60)
+                        
+                        if duration_minutes >= min_duration_minutes:
+                            available_slots.append({
+                                'date': d,
+                                'start': slot_start,
+                                'end': slot_end,
+                                'start_dt': slot_start,
+                                'weekday': d.weekday()
+                            })
+                
+                current_time = max(current_time, busy_end)
+            
+            if current_time < work_end:
+                duration = work_end - current_time
+                duration_minutes = int(duration.total_seconds() // 60)
+                
+                if duration_minutes >= min_duration_minutes:
+                    available_slots.append({
+                        'date': d,
+                        'start': current_time,
+                        'end': work_end,
+                        'start_dt': current_time,
+                        'weekday': d.weekday()
+                    })
+            
+            d += timedelta(days=1)
         
         # Group by week
         weeks = {}
@@ -302,7 +295,8 @@ def index():
         selected_week_data=selected_week_data,
         day_dates=day_dates,
         current_tz=tz_name,
-        timezones=TIMEZONES
+        timezones=TIMEZONES,
+        horizon_days=CALENDAR_HORIZON_DAYS,
     ))
     # Prevent caching to ensure fresh data
     response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
